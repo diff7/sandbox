@@ -47,15 +47,16 @@ class Gauz:
         return s1 * s2
     
     def plot(self):
+        colors = ['g','y','b','o','r']
 
         plt.figure(figsize=(10,7))
         plt.xlabel("$x$")
         plt.ylabel("pdf")
-        plt.scatter(self.variables, [0.005]*len(self.variables), color='navy', s=30, marker=2, label="Train data")
+        plt.scatter(self.variables, [0.005]*len(self.variables), color='navy', s=30, marker=2, label="Random Data")
         
-        label = "True pdf"
+        label = "PDF Probability"
         for idx in range(self.num_dists):
-            plt.plot(self.bins, self.pdf(self.bins, idx), color=self.color, label=label)
+            plt.plot(self.bins, self.pdf(self.bins, idx), color=colors[idx], label=label)
             label = None
         
         plt.legend()
