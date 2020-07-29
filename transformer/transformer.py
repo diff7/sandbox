@@ -1,5 +1,6 @@
 #  source:
 #  https://www.tensorflow.org/tutorials/text/transformer
+import numpy as np
 import tensorflow as tf
 
 
@@ -178,6 +179,116 @@ class DecoderLayer(tf.keras.layers.Layer):
         return out3, attn_weights_block1, attn_weights_block2
 
 
+def positional_encoding(position, d_model):
+    angle_rads = get_angles(
+        np.arange(position)[:, np.newaxis], np.arange(d_model)[np.newaxis, :], d_model
+    )
+
+    # apply sin to even indices in the array; 2i
+    angle_rads[:, 0::2] = np.sin(angle_rads[:, 0::2])
+
+    # apply cos to odd indices in the array; 2i+1
+    angle_rads[:, 1::2] = np.cos(angle_rads[:, 1::2])
+
+    pos_encoding = angle_rads[np.newaxis, ...]
+
+    return tf.cast(pos_encoding, dtype=tf.float32)
+
+
+class Encoder(tf.keras.layers.Layer):
+    def __init__(
+        self,
+        num_layers,
+        d_model,
+        num_heads,
+        dff,
+        input_vocab_size,
+        maximum_position_encoding,
+        rate=0.1,
+    ):
+        super(Encoder, self).__init__()
+
+        self.d_model = d_model
+        self.num_layers = num_layers
+
+        self.embedding = tf.keras.layers.Embedding(input_vocab_size, d_model)
+        self.pos_encoding = positional_encoding(maximum_position_encoding, self.d_model)
+
+        self.enc_layers = [
+            EncoderLayer(d_model, num_heads, dff, rate) for _ in range(num_layers)
+        ]
+
+        self.dropout = tf.keras.layers.Dropout(rate)
+
+    def call(self, x, training, mask):
+
+        seq_len = tf.shape(x)[1]
+
+        # adding embedding and position encoding.
+        x = self.embedding(x)  # (batch_size, input_seq_len, d_model)
+        x *= tf.math.sqrt(tf.cast(self.d_model, tf.float32))
+        x += self.pos_encoding[:, :seq_len, :]
+
+        x = self.dropout(x, training=training)
+
+        for i in range(self.num_layers):
+            x = self.enc_layers[i](x, training, mask)
+
+        return x  # (batch_size, input_seq_len, d_model)
+
+
+def get_angles(pos, i, d_model):
+    angle_rates = 1 / np.power(10000, (2 * (i // 2)) / np.float32(d_model))
+    return pos * angle_rates
+
+
+class Decoder(tf.keras.layers.Layer):
+    def __init__(
+        self,
+        num_layers,
+        d_model,
+        num_heads,
+        dff,
+        target_vocab_size,
+        maximum_position_encoding,
+        rate=0.1,
+    ):
+        super(Decoder, self).__init__()
+
+        self.d_model = d_model
+        self.num_layers = num_layers
+
+        self.embedding = tf.keras.layers.Embedding(target_vocab_size, d_model)
+        self.pos_encoding = positional_encoding(maximum_position_encoding, d_model)
+
+        self.dec_layers = [
+            DecoderLayer(d_model, num_heads, dff, rate) for _ in range(num_layers)
+        ]
+        self.dropout = tf.keras.layers.Dropout(rate)
+
+    def call(self, x, enc_output, training, look_ahead_mask, padding_mask):
+
+        seq_len = tf.shape(x)[1]
+        attention_weights = {}
+
+        x = self.embedding(x)  # (batch_size, target_seq_len, d_model)
+        x *= tf.math.sqrt(tf.cast(self.d_model, tf.float32))
+        x += self.pos_encoding[:, :seq_len, :]
+
+        x = self.dropout(x, training=training)
+
+        for i in range(self.num_layers):
+            x, block1, block2 = self.dec_layers[i](
+                x, enc_output, training, look_ahead_mask, padding_mask
+            )
+
+            attention_weights["decoder_layer{}_block1".format(i + 1)] = block1
+            attention_weights["decoder_layer{}_block2".format(i + 1)] = block2
+
+        # x.shape == (batch_size, target_seq_len, d_model)
+        return x, attention_weights
+
+
 class Transformer(tf.keras.Model):
     def __init__(
         self,
@@ -221,3 +332,19 @@ class Transformer(tf.keras.Model):
         )  # (batch_size, tar_seq_len, target_vocab_size)
 
         return final_output, attention_weights
+
+
+class CustomSchedule(tf.keras.optimizers.schedules.LearningRateSchedule):
+    def __init__(self, d_model, warmup_steps=4000):
+        super(CustomSchedule, self).__init__()
+
+        self.d_model = d_model
+        self.d_model = tf.cast(self.d_model, tf.float32)
+
+        self.warmup_steps = warmup_steps
+
+    def __call__(self, step):
+        arg1 = tf.math.rsqrt(step)
+        arg2 = step * (self.warmup_steps ** -1.5)
+
+        return tf.math.rsqrt(self.d_model) * tf.math.minimum(arg1, arg2)
