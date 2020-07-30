@@ -150,7 +150,7 @@ class Trainer:
                     )
 
             if (epoch + 1) % 5 == 0:
-                ckpt_save_path = ckpt_manager.save()
+                ckpt_save_path = self.ckpt_manager.save()
                 print(
                     "Saving checkpoint for epoch {} at {}".format(
                         epoch + 1, ckpt_save_path
