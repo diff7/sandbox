@@ -54,7 +54,9 @@ class DenseResidual(nn.Module):
 class TabNet(nn.Module):
     def __init__(self, params):
         self.params = params
-        self.linear_collector = nn.Linear(params["max_width"], params["mid_features"])
+        self.linear_collector = nn.Linear(
+            params["input_concat_vector_size"], params["mid_features"]
+        )
         if params["num_real"] > 0:
             self.liner_real_values = nn.Linear(
                 params["num_real"], params["mid_features"]
@@ -67,10 +69,11 @@ class TabNet(nn.Module):
         )
 
     def forward(self, x):
-        x_real = x["real"]
-        x_cat = x["cat"]
+        x_real = x["real_vector"]
+        x_cat = x["cat_vector"]
         cat_vector = self.categorical_embed(x_cat)
         real_vector = self.liner_real_values(x_real)
         vector = torch.cat((cat_vector, real_vector), dim=1)
         out = self.linear_collector(vector)
         out = self.main_block(out)
+        return out
