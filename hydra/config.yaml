@@ -1,0 +1,8 @@
+db:
+  driver: mysql
+  pw: secret
+  user: omry
+
+values:
+        - value_one
+        - value_two
